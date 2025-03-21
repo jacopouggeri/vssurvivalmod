@@ -1,9 +1,11 @@
 ﻿using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
+using Vintagestory.API.Util;
 
 namespace Vintagestory.ServerMods
 {
@@ -11,6 +13,9 @@ namespace Vintagestory.ServerMods
 
     public class VillageSchematic
     {
+        [JsonProperty]
+        public int MinSpawnDistance = 0;
+
         public string Path;
         public int OffsetY = 0;
         public double Weight;
@@ -20,6 +25,7 @@ namespace Vintagestory.ServerMods
 
         // Used by worldgen
         public int NowQuantity;
+        
 
         public bool ShouldGenerate => NowQuantity < MaxQuantity;
     }
@@ -94,8 +100,11 @@ namespace Vintagestory.ServerMods
                 for (int j = 0; j < assets.Length; j++)
                 {
                     int offsety = WorldGenStructureBase.getOffsetY(schematicYOffsets, defaultOffsetY, assets[j]);
-                    var sch = WorldGenStructureBase.LoadSchematic<BlockSchematicStructure>(api, assets[j], blockLayerConfig, structureConfig, offsety, MaxYDiff);
-                    if (sch != null) schematics.AddRange(sch);
+                    var sch = WorldGenStructureBase.LoadSchematic<BlockSchematicStructure>(api, assets[j], blockLayerConfig, structureConfig, null, offsety);
+                    if (sch != null)
+                    {
+                        schematics.AddRange(sch);
+                    }
                 }
 
                 schem.Structures = schematics.ToArray();
@@ -137,9 +146,10 @@ namespace Vintagestory.ServerMods
 
 
 
-        public bool TryGenerate(IBlockAccessor blockAccessor, IWorldAccessor worldForCollectibleResolve, BlockPos pos, int climateUpLeft, int climateUpRight, int climateBotLeft, int climateBotRight, DidGenerate didGenerateStructure)
+        public bool TryGenerate(IBlockAccessor blockAccessor, IWorldAccessor worldForCollectibleResolve, BlockPos pos, int climateUpLeft, int climateUpRight, int climateBotLeft, int climateBotRight, DidGenerate didGenerateStructure, BlockPos spawnPos)
         {
             if (!WorldGenStructure.SatisfiesMinDistance(pos, worldForCollectibleResolve, MinGroupDistance, Group)) return false;
+            
 
             rand.InitPositionSeed(pos.X, pos.Z);
 
@@ -177,7 +187,7 @@ namespace Vintagestory.ServerMods
                     int r = Math.Min(16 + dr++ / 2, 24);
 
                     botCenterPos.Set(pos);
-                    botCenterPos.Add(rand.NextInt(2*r) - r, 0, rand.NextInt(2*r) - r);
+                    botCenterPos.Add(rand.NextInt(2 * r) - r, 0, rand.NextInt(2 * r) - r);
                     botCenterPos.Y = blockAccessor.GetTerrainMapheightAt(botCenterPos);
                     if (botCenterPos.Y == 0) continue;    // Can only be because it couldn't find a mapchunk or invalid position
 
@@ -202,9 +212,15 @@ namespace Vintagestory.ServerMods
                         }
                     }
 
+                    if (!BlockSchematicStructure.SatisfiesMinSpawnDistance(schem.MinSpawnDistance, pos, spawnPos))
+                    {
+                        if (genRequired) break;
+                        continue;
+                    }
+
                     // First get a random structure from the VillageSchematic
-                    int num = rand.NextInt(schem.Structures.Length);
-                    BlockSchematicStructure struc = schem.Structures[num];
+                    int randomIndex = rand.NextInt(schem.Structures.Length);
+                    BlockSchematicStructure struc = schem.Structures[randomIndex];
 
                     location.Set(
                         botCenterPos.X - struc.SizeX / 2, botCenterPos.Y, botCenterPos.Z - struc.SizeZ / 2,
@@ -223,7 +239,7 @@ namespace Vintagestory.ServerMods
 
                     if (intersect) continue;
 
-                    struc.Unpack(worldForCollectibleResolve.Api);
+                    struc.Unpack(worldForCollectibleResolve.Api, randomIndex % 4);
                     if (CanGenerateStructureAt(struc, blockAccessor, location))
                     {
                         if (genRequired) mustGenerate.RemoveAt(mustGenerate.Count - 1);

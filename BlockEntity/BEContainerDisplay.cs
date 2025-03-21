@@ -131,7 +131,10 @@ namespace Vintagestory.GameContent
         {
             if (eventname != "genjsontransform" && eventname != "oncloseedittransforms" &&
                 eventname != "onapplytransforms") return;
-            if (Inventory.Empty) return;
+            if (capi == null || Inventory.Empty) return;
+
+            // This is only used for doing .tfedit on nearby stuff, it creates a lot of lag if we remesh the entire loaded chunk area
+            if (Pos.DistanceTo(capi.World.Player.Entity.Pos.X, capi.World.Player.Entity.Pos.Y, capi.World.Player.Entity.Pos.Z) > 20) return;
 
             for (var i = 0; i < DisplayedItems; i++)
             {
@@ -189,7 +192,7 @@ namespace Vintagestory.GameContent
 
         protected virtual string getMeshCacheKey(ItemStack stack)
         {
-            var meshSource = stack.Collectible as IContainedMeshSource;
+            IContainedMeshSource meshSource = stack.Collectible?.GetCollectibleInterface<IContainedMeshSource>();
             if (meshSource != null)
             {
                 return meshSource.GetMeshCacheKey(stack);
@@ -212,7 +215,7 @@ namespace Vintagestory.GameContent
             MeshData mesh = getMesh(stack);
             if (mesh != null) return mesh;
 
-            var meshSource = stack.Collectible as IContainedMeshSource;
+            IContainedMeshSource meshSource = stack.Collectible?.GetCollectibleInterface<IContainedMeshSource>();
 
             if (meshSource != null)
             {

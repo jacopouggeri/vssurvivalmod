@@ -206,7 +206,7 @@ namespace Vintagestory.GameContent
 
         public virtual void LateInitInventory()
         {
-            Inventory.LateInitialize(InventoryClassName + "-" + Pos.X + "/" + Pos.Y + "/" + Pos.Z, Api);
+            Inventory.LateInitialize(InventoryClassName + "-" + Pos, Api);
             Inventory.ResolveBlocksOrItems();
             container.LateInit();
             MarkDirty();
@@ -235,7 +235,7 @@ namespace Vintagestory.GameContent
 
         public void OpenLid()
         {
-            if (!animUtil.activeAnimationsByAnimCode.ContainsKey("lidopen"))
+            if (animUtil?.activeAnimationsByAnimCode.ContainsKey("lidopen") == false)
             {
                 animUtil?.StartAnimation(new AnimationMetaData()
                 {
@@ -250,7 +250,7 @@ namespace Vintagestory.GameContent
 
         public void CloseLid()
         {
-            if (animUtil.activeAnimationsByAnimCode.ContainsKey("lidopen"))
+            if (animUtil?.activeAnimationsByAnimCode.ContainsKey("lidopen") == true)
             {
                 animUtil?.StopAnimation("lidopen");
             }

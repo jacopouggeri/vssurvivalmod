@@ -5,6 +5,7 @@ using Vintagestory.API.Datastructures;
 using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
 using Vintagestory.API.Util;
+using Vintagestory.GameContent;
 
 namespace Vintagestory.ServerMods
 {
@@ -90,6 +91,8 @@ namespace Vintagestory.ServerMods
         }
 
 
+        BlockPos spawnPos;
+
         public void initWorldGen()
         {
             LoadGlobalConfig(api);
@@ -131,11 +134,20 @@ namespace Vintagestory.ServerMods
                 if(api.Assets.Exists(new AssetLocation(path)))
                 {
                     asset = api.Assets.Get(path);
-
                     var storyStructuresConfig = asset.ToObject<WorldGenStructuresConfig>();
                     storyStructuresConfig.Init(api);
                     StoryStructures[storyStructure.Code] = storyStructuresConfig.Structures;
                 }
+            }
+
+
+            var df = api.WorldManager.SaveGame.DefaultSpawn;
+            if (df != null)
+            {
+                spawnPos = new BlockPos(df.x, df.y ?? 0, df.z);
+            } else
+            {
+                spawnPos = api.World.BlockAccessor.MapSize.AsBlockPos / 2;
             }
         }
 
@@ -221,6 +233,7 @@ namespace Vintagestory.ServerMods
 
             ITreeAttribute chanceModTree = null;
             ITreeAttribute maxQuantityModTree = null;
+            StoryStructureLocation location = null;
             if (chunkGenParams?["structureChanceModifier"] != null)
             {
                 chanceModTree = chunkGenParams["structureChanceModifier"] as TreeAttribute;
@@ -277,9 +290,36 @@ namespace Vintagestory.ServerMods
                     }
 
                     if (startPos.Y <= 0) continue;
+                                
+                    if (!BlockSchematicStructure.SatisfiesMinSpawnDistance(struc.MinSpawnDistance, startPos, spawnPos))
+                    {
+                        continue;
+                    }
+
+                    // check if in storylocation and if we can still generate this structure
+                    if (locationCode != null)
+                    {
+                        location = GetIntersectingStructure(chunkX * chunksize + chunksize / 2, chunkZ * chunksize + chunksize / 2);
+                        if (location.SchematicsSpawned?.TryGetValue(struc.Group, out var spawnedSchematics) == true && spawnedSchematics >= struc.StoryLocationMaxAmount)
+                        {
+                            continue;
+                        }
+                    }
 
                     if (struc.TryGenerate(worldgenBlockAccessor, api.World, startPos, climateUpLeft, climateUpRight, climateBotLeft, climateBotRight, locationCode))
                     {
+                        if(locationCode != null && location != null)
+                        {
+                            if (location.SchematicsSpawned?.TryGetValue(struc.Group, out var spawnedSchematics) == true)
+                            {
+                                location.SchematicsSpawned[struc.Group] = spawnedSchematics + 1;
+                            }
+                            else
+                            {
+                                location.SchematicsSpawned ??= new Dictionary<string, int>();
+                                location.SchematicsSpawned[struc.Group] = 1;
+                            }
+                        }
                         Cuboidi loc = struc.LastPlacedSchematicLocation;
 
                         string code = struc.Code + (struc.LastPlacedSchematic == null ? "" : "/" + struc.LastPlacedSchematic.FromFileName);
@@ -354,7 +394,7 @@ namespace Vintagestory.ServerMods
                         AllowUseEveryone = true
                     });
                 }
-            });
+            }, spawnPos);
         }
     }
 }

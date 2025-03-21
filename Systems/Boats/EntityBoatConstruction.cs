@@ -245,7 +245,7 @@ namespace Vintagestory.GameContent
             Dictionary<string, string> storeWildCard = new();
 
 
-            bool skipMatCost = plr?.WorldData.CurrentGameMode == EnumGameMode.Creative && byEntity.Controls.Sprint;
+            bool skipMatCost = plr?.WorldData.CurrentGameMode == EnumGameMode.Creative && byEntity.Controls.CtrlKey;
 
 
             foreach (var slot in hotbarinv)
@@ -291,7 +291,8 @@ namespace Vintagestory.GameContent
             if (!skipMatCost && requireIngreds.Count > 0)
             {
                 var ingred = requireIngreds[0];
-                plr.SendIngameError("missingstack", null, ingred.Quantity, ingred.IsWildCard ? Lang.Get(ingred.Name??"") : ingred.ResolvedItemstack.GetName());
+                string langCode = plr.LanguageCode;
+                plr.SendIngameError("missingstack", null, ingred.Quantity, ingred.IsWildCard ? Lang.GetL(langCode, ingred.Name??"") : ingred.ResolvedItemstack.GetName());
                 return false;
             }
 

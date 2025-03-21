@@ -90,7 +90,7 @@ namespace Vintagestory.ServerMods
 
         private void InitWorldGen()
         {
-            _chunksize = api.WorldManager.ChunkSize;
+            _chunksize = GlobalConstants.ChunkSize;
             _regionChunkSize = api.WorldManager.RegionSize / _chunksize;
 
             var asset = api.Assets.Get("worldgen/structures.json");
@@ -184,7 +184,6 @@ namespace Vintagestory.ServerMods
                 .EndSubCommand()
                 .BeginSubCommand("pregen")
                     .WithDescription("Pregenerate chunks around the player or around world center when executed from console.")
-                    .RequiresPlayer()
                     .WithArgs(parsers.OptionalInt("chunk_range", 2))
                     .HandleWith(OnCmdPregen)
                 .EndSubCommand()
@@ -205,6 +204,12 @@ namespace Vintagestory.ServerMods
                     .RequiresPlayer()
                     .WithArgs(parsers.IntRange("chunk_range",1,50), parsers.OptionalWord("landform"))
                     .HandleWith(OnCmdDel)
+                .EndSubCommand()
+                    .BeginSubCommand("delr")
+                    .WithDescription("Delete chunks around the player and the map regions. This will allow that changed terrain can generate for example at story locations.")
+                    .RequiresPlayer()
+                    .WithArgs(parsers.IntRange("chunk_range",1,50))
+                    .HandleWith(OnCmdDelr)
                 .EndSubCommand()
                 .BeginSubCommand("delrange")
                     .WithDescription("Delete a range of chunks. Start and end positions are in chunk coordinates. See CTRL + F3")
@@ -664,6 +669,12 @@ namespace Vintagestory.ServerMods
             return Regen(args.Caller, range, true, landform,true);
         }
 
+        private TextCommandResult OnCmdDelr(TextCommandCallingArgs args)
+        {
+            var range = (int)args[0];
+            return Regen(args.Caller, range, true, null,true, true);
+        }
+
         private TextCommandResult OnCmdDelrange(TextCommandCallingArgs args)
         {
             var xs = (int)args[0];
@@ -1085,7 +1096,7 @@ namespace Vintagestory.ServerMods
         private TextCommandResult OnCmdPos(TextCommandCallingArgs args)
         {
 
-            var chunkSize = api.WorldManager.ChunkSize;
+            var chunkSize = GlobalConstants.ChunkSize;
             var player = args.Caller.Player as IServerPlayer;
             BlockPos pos = args.Caller.Entity.Pos.AsBlockPos;
             IServerChunk serverchunk = api.WorldManager.GetChunk(pos);
@@ -1511,16 +1522,22 @@ namespace Vintagestory.ServerMods
             float landcover = worldConfig.GetString("landcover", "1").ToFloat(1f);
             float oceanscale = worldConfig.GetString("oceanscale", "1").ToFloat(1f);
 
-            var noiseSizeOcean = api.WorldManager.RegionSize / TerraGenConfig.oceanMapScale;
-            int centerRegX = api.WorldManager.MapSizeX / api.WorldManager.RegionSize / 2;
-            int centerRegZ = api.WorldManager.MapSizeZ / api.WorldManager.RegionSize / 2;
+            var chunkSize = GlobalConstants.ChunkSize;
 
-            var list = new List<XZ>();
-            list.Add(new XZ(centerRegX * noiseSizeOcean, centerRegZ * noiseSizeOcean));
+            var modSystem = api.ModLoader.GetModSystem<GenMaps>();
+            var list = modSystem.requireLandAt;
 
-            var map = GenMaps.GetOceanMapGen(_seed + 1873, landcover, TerraGenConfig.oceanMapScale, oceanscale, list);
+            var startX = 0;
+            var startZ = 0;
+            if(args.Caller.Player != null)
+            {
+                startX = (int)args.Caller.Player.Entity.Pos.X / chunkSize;
+                startZ = (int)args.Caller.Player.Entity.Pos.Z / chunkSize;
+            }
+            var requiresSpawnOffset = GameVersion.IsLowerVersionThan(api.WorldManager.SaveGame.CreatedGameVersion, "1.20.0-pre.14");
+            var map = GenMaps.GetOceanMapGen(_seed + 1873, landcover, TerraGenConfig.oceanMapScale, oceanscale, list, requiresSpawnOffset);
             NoiseBase.Debug = true;
-            map.DebugDrawBitmap(DebugDrawMode.FirstByteGrayscale, 0, 0, size, "Ocean 1");
+            map.DebugDrawBitmap(DebugDrawMode.FirstByteGrayscale, startX, startZ, size, "Ocean 1-"+startX+"-"+startZ);
             NoiseBase.Debug = false;
             return TextCommandResult.Success("Ocean map generated");
         }
@@ -1707,13 +1724,13 @@ namespace Vintagestory.ServerMods
             var player = caller.Player as IServerPlayer;
             player.SendMessage(caller.FromChatGroupId, "Deleting rock, this may take a while...", EnumChatType.CommandError);
 
-            int chunkMidX = api.WorldManager.MapSizeX / api.WorldManager.ChunkSize / 2;
-            int chunkMidZ = api.WorldManager.MapSizeZ / api.WorldManager.ChunkSize / 2;
+            int chunkMidX = api.WorldManager.MapSizeX / GlobalConstants.ChunkSize / 2;
+            int chunkMidZ = api.WorldManager.MapSizeZ / GlobalConstants.ChunkSize / 2;
 
             if (aroundPlayer)
             {
-                chunkMidX = (int)player.Entity.Pos.X / api.WorldManager.ChunkSize;
-                chunkMidZ = (int)player.Entity.Pos.Z / api.WorldManager.ChunkSize;
+                chunkMidX = (int)player.Entity.Pos.X / GlobalConstants.ChunkSize;
+                chunkMidZ = (int)player.Entity.Pos.Z / GlobalConstants.ChunkSize;
             }
 
             List<Vec2i> coords = new List<Vec2i>();
@@ -1726,7 +1743,7 @@ namespace Vintagestory.ServerMods
                 }
             }
 
-            int chunksize = api.WorldManager.ChunkSize;
+            int chunksize = GlobalConstants.ChunkSize;
 
             IList<Block> blocks = api.World.Blocks;
 
@@ -1757,16 +1774,16 @@ namespace Vintagestory.ServerMods
         {
             int chunkMidX;
             int chunkMidZ;
-            var player = caller.Player as IServerPlayer;
-            if (player.PlayerUID.Equals("console"))
+            if (caller.Type == EnumCallerType.Console)
             {
-                chunkMidX = api.WorldManager.MapSizeX / api.WorldManager.ChunkSize / 2;
-                chunkMidZ = api.WorldManager.MapSizeX / api.WorldManager.ChunkSize / 2;
+                chunkMidX = api.WorldManager.MapSizeX / GlobalConstants.ChunkSize / 2;
+                chunkMidZ = api.WorldManager.MapSizeX / GlobalConstants.ChunkSize / 2;
             }
             else
             {
-                chunkMidX = (int)player.Entity.Pos.X / api.WorldManager.ChunkSize;
-                chunkMidZ = (int)player.Entity.Pos.Z / api.WorldManager.ChunkSize;
+                var player = caller.Player as IServerPlayer;
+                chunkMidX = (int)player.Entity.Pos.X / GlobalConstants.ChunkSize;
+                chunkMidZ = (int)player.Entity.Pos.Z / GlobalConstants.ChunkSize;
             }
 
             List<Vec2i> coords = new List<Vec2i>();
@@ -1779,7 +1796,6 @@ namespace Vintagestory.ServerMods
                     coords.Add(new Vec2i(chunkMidX + x, chunkMidZ + z));
                 }
             }
-
 
             LoadColumnsSlow(caller, coords, 0);
             return TextCommandResult.Success("Type /debug chunk queue to see current generating queue size");
@@ -1805,8 +1821,14 @@ namespace Vintagestory.ServerMods
                         break;
                     }
                 }
-
-                player.SendMessage(caller.FromChatGroupId, string.Format("Ok, added {0} columns, {1} left to add, waiting until these are done.", qadded, coords.Count - startIndex), EnumChatType.CommandSuccess);
+                if (caller.Type == EnumCallerType.Console)
+                {
+                    api.Logger.Notification("Ok, added {0} columns, {1} left to add, waiting until these are done.", qadded, coords.Count - startIndex);
+                }
+                else
+                {
+                    player.SendMessage(caller.FromChatGroupId, string.Format("Ok, added {0} columns, {1} left to add, waiting until these are done.", qadded, coords.Count - startIndex), EnumChatType.CommandSuccess);
+                }
             }
 
             if (startIndex < coords.Count)
@@ -1814,7 +1836,14 @@ namespace Vintagestory.ServerMods
                 api.World.RegisterCallback((dt) => LoadColumnsSlow(caller, coords, startIndex), 1000);
             } else
             {
-                player.SendMessage(caller.FromChatGroupId, string.Format("Ok, {0} columns, generated!", coords.Count), EnumChatType.CommandSuccess);
+                if (caller.Type == EnumCallerType.Console)
+                {
+                    api.Logger.Notification("Ok, {0} columns, generated!", coords.Count);
+                }
+                else
+                {
+                    player.SendMessage(caller.FromChatGroupId, string.Format("Ok, {0} columns, generated!", coords.Count), EnumChatType.CommandSuccess);
+                }
             }
         }
 
@@ -1834,22 +1863,13 @@ namespace Vintagestory.ServerMods
 
             if (api.Server.PauseThread("chunkdbthread"))
             {
-                NoiseLandforms.ReloadLandforms(api);
+                api.Assets.Reload(new AssetLocation("worldgen/"));
+                var patchLoader = api.ModLoader.GetModSystem<ModJsonPatchLoader>();
+                patchLoader.ApplyPatches("worldgen/");
 
-                api.ModLoader.GetModSystem<GenTerra>().initWorldGen();
-                api.ModLoader.GetModSystem<GenMaps>().initWorldGen();
-                api.ModLoader.GetModSystem<GenRockStrataNew>().initWorldGen(seedDiff);
+                NoiseLandforms.LoadLandforms(api);
 
-                if (TerraGenConfig.DoDecorationPass)
-                {
-                    api.ModLoader.GetModSystem<GenVegetationAndPatches>().initWorldGen();
-                    api.ModLoader.GetModSystem<GenPonds>().initWorldGen();
-                    api.ModLoader.GetModSystem<GenBlockLayers>().InitWorldGen();
-                    api.ModLoader.GetModSystem<GenCaves>().initWorldGen();
-                    api.ModLoader.GetModSystem<GenDeposits>().reloadWorldGen();
-                    api.ModLoader.GetModSystem<GenStructures>().initWorldGen();
-                    api.ModLoader.GetModSystem<GenStoryStructures>().InitWorldGen();
-                }
+                api.Event.TriggerInitWorldGen();
 
                 msg = Regen(caller, range, false,landform, aroundPlayer, deleteRegion);
             } else
@@ -1863,19 +1883,19 @@ namespace Vintagestory.ServerMods
 
         TextCommandResult Regen(Caller caller, int rad, bool onlydelete, string landforms, bool aroundPlayer = false, bool deleteRegion = false)
         {
-            int chunkMidX = api.WorldManager.MapSizeX / api.WorldManager.ChunkSize / 2;
-            int chunkMidZ = api.WorldManager.MapSizeZ / api.WorldManager.ChunkSize / 2;
+            int chunkMidX = api.WorldManager.MapSizeX / GlobalConstants.ChunkSize / 2;
+            int chunkMidZ = api.WorldManager.MapSizeZ / GlobalConstants.ChunkSize / 2;
             var player = caller.Player as IServerPlayer;
             if (aroundPlayer)
             {
-                chunkMidX = (int)player.Entity.Pos.X / api.WorldManager.ChunkSize;
-                chunkMidZ = (int)player.Entity.Pos.Z / api.WorldManager.ChunkSize;
+                chunkMidX = (int)player.Entity.Pos.X / GlobalConstants.ChunkSize;
+                chunkMidZ = (int)player.Entity.Pos.Z / GlobalConstants.ChunkSize;
             }
 
             List<Vec2i> coords = new List<Vec2i>();
             HashSet<Vec2i> regCoords = new HashSet<Vec2i>();
 
-            int regionChunkSize = api.WorldManager.RegionSize / api.WorldManager.ChunkSize;
+            int regionChunkSize = api.WorldManager.RegionSize / GlobalConstants.ChunkSize;
             for (int x = -rad; x <= rad; x++)
             {
                 for (int z = -rad; z <= rad; z++)
@@ -1885,11 +1905,13 @@ namespace Vintagestory.ServerMods
                 }
             }
 
+            var modSys = api.ModLoader.GetModSystem<GenStoryStructures>();
+
             TreeAttribute tree = null;
-            if (deleteRegion)
+            if (deleteRegion && !onlydelete)
             {
                 Dictionary<long, List<GeneratedStructure>> regionStructures = new();
-                var chunkSize = api.WorldManager.ChunkSize;
+                var chunkSize = GlobalConstants.ChunkSize;
                 foreach (Vec2i coord in coords)
                 {
                     var regionIndex = api.WorldManager.MapRegionIndex2D(coord.X / regionChunkSize, coord.Y / regionChunkSize);
@@ -1901,8 +1923,20 @@ namespace Vintagestory.ServerMods
 
                         // remove the structures from each chunk that will be regenerated
                         var structures = mapRegion.GeneratedStructures.Where(s =>
-                            coord.X == s.Location.Start.X / chunkSize &&
-                            coord.Y == s.Location.Start.Z / chunkSize);
+                            coord.X == s.Location.X1 / chunkSize &&
+                            coord.Y == s.Location.Z1 / chunkSize).ToList();
+
+                        foreach (var structure in structures)
+                        {
+                            var location = modSys.GetStoryStructureAt(structure.Location.X1, structure.Location.Z1);
+                            if (location != null && modSys.storyStructureInstances.TryGetValue(location.Code, out var structureInstance))
+                            {
+                                if (structure.Group != null && structureInstance.SchematicsSpawned?.TryGetValue(structure.Group, out var spawned) == true)
+                                {
+                                    structureInstance.SchematicsSpawned[structure.Group] = Math.Max(0, spawned - 1);
+                                }
+                            }
+                        }
                         regionStructures[regionIndex].RemoveAll(s => structures.Contains(s));
                     }
                 }
@@ -1961,6 +1995,7 @@ namespace Vintagestory.ServerMods
 
                             if (leftToLoad <= 0 && !sent)
                             {
+                                modSys.FinalizeRegeneration(chunkMidX, chunkMidZ);
                                 sent = true;
                                 player.SendMessage(caller.FromChatGroupId, "Regen complete", EnumChatType.CommandSuccess);
 
@@ -1969,7 +2004,7 @@ namespace Vintagestory.ServerMods
 
                                 foreach (Vec2i ccoord in coords)
                                 {
-                                    for (int cy = 0; cy < api.WorldManager.MapSizeY / api.WorldManager.ChunkSize; cy++)
+                                    for (int cy = 0; cy < api.WorldManager.MapSizeY / GlobalConstants.ChunkSize; cy++)
                                     {
                                         api.WorldManager.BroadcastChunk(ccoord.X, cy, ccoord.Y, true);
                                     }
@@ -1982,20 +2017,34 @@ namespace Vintagestory.ServerMods
             }
             else
             {
-                // when only deleting chunks we delete all structures from the mapregion
-                var chunkSize = api.WorldManager.ChunkSize;
-                foreach (Vec2i coord in coords)
+                if (!deleteRegion)
                 {
-                    var regionIndex = api.WorldManager.MapRegionIndex2D(coord.X / regionChunkSize, coord.Y / regionChunkSize);
-                    var mapRegion = api.WorldManager.GetMapRegion(regionIndex);
-                    if (mapRegion?.GeneratedStructures.Count > 0)
+                    // when only deleting chunks we delete all structures from the mapregion
+                    const int chunkSize = GlobalConstants.ChunkSize;
+                    foreach (Vec2i coord in coords)
                     {
-                        // remove the structures from each chunk that will be deleted
-                        var generatedStructures = mapRegion.GeneratedStructures;
-                        var structures = generatedStructures.Where(s =>
-                            coord.X == s.Location.Start.X / chunkSize &&
-                            coord.Y == s.Location.Start.Z / chunkSize);
-                        generatedStructures.RemoveAll(s => structures.Contains(s));
+                        var regionIndex = api.WorldManager.MapRegionIndex2D(coord.X / regionChunkSize, coord.Y / regionChunkSize);
+                        var mapRegion = api.WorldManager.GetMapRegion(regionIndex);
+                        if (mapRegion?.GeneratedStructures.Count > 0)
+                        {
+                            // remove the structures from each chunk that will be deleted
+                            var generatedStructures = mapRegion.GeneratedStructures;
+                            var structures = generatedStructures.Where(s =>
+                                coord.X == s.Location.X1 / chunkSize &&
+                                coord.Y == s.Location.Z1 / chunkSize).ToList();
+                            foreach (var structure in structures)
+                            {
+                                var location = modSys.GetStoryStructureAt(structure.Location.X1, structure.Location.Z1);
+                                if (location != null && modSys.storyStructureInstances.TryGetValue(location.Code, out var structureInstance))
+                                {
+                                    if (structure.Group != null && structureInstance.SchematicsSpawned?.TryGetValue(structure.Group, out var spawned) == true)
+                                    {
+                                        structureInstance.SchematicsSpawned[structure.Group] = Math.Max(0, spawned - 1);
+                                    }
+                                }
+                            }
+                            generatedStructures.RemoveAll(s => structures.Contains(s));
+                        }
                     }
                 }
             }
@@ -2151,7 +2200,7 @@ namespace Vintagestory.ServerMods
             var pos = args.Caller.Player.CurrentBlockSelection?.Position.AddCopy(0,struc.OffsetY ?? 0,0) ?? args.Caller.Pos.AsBlockPos.AddCopy(0,struc.OffsetY ?? 0,0);
 
             var schematic = struc.schematicDatas[schematicNum][schematicRot];
-            schematic.Unpack(api);
+
             var chunkX = pos.X / _chunksize;
             var chunkZ = pos.Z / _chunksize;
             var chunkY = pos.Y / _chunksize;

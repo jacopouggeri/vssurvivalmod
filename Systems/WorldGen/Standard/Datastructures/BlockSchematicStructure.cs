@@ -13,7 +13,6 @@ namespace Vintagestory.ServerMods
         public Dictionary<int, AssetLocation> BlockCodesTmpForRemap = new();
 
         public string FromFileName;
-        public Dictionary<AssetLocation, AssetLocation> Remaps;
 
         public Block[,,] blocksByPos;
         public Dictionary<BlockPos, Block> FluidBlocksByPos;
@@ -25,6 +24,15 @@ namespace Vintagestory.ServerMods
 
         public int OffsetY { get; set; } = -1;
         public int MaxYDiff = 3;
+        public int MaxBelowSealevel = 20;
+        public int? StoryLocationMaxAmount;
+
+        public static bool SatisfiesMinSpawnDistance(int minSpawnDistance, BlockPos pos, BlockPos spawnPos)
+        {
+            if (minSpawnDistance <= 0) return true;
+            return spawnPos.HorDistanceSqTo(pos.X, pos.Z) > minSpawnDistance * minSpawnDistance;
+        }
+
 
         public override void Init(IBlockAccessor blockAccessor)
         {
@@ -34,20 +42,6 @@ namespace Vintagestory.ServerMods
 
             blocksByPos = new Block[SizeX + 1, SizeY + 1, SizeZ + 1];
             FluidBlocksByPos = new Dictionary<BlockPos, Block>();
-
-            if (Remaps != null && Remaps.Count > 0)
-            {
-                foreach (var storedId in BlockCodes.Keys.ToArray())
-                {
-                    foreach (var remap in Remaps)
-                    {
-                        if (remap.Equals(BlockCodes[storedId].Path))
-                        {
-                            BlockCodes[storedId] = remap.Value;
-                        }
-                    }
-                }
-            }
 
             for (int i = 0; i < Indices.Count; i++)
             {
@@ -288,7 +282,7 @@ namespace Vintagestory.ServerMods
                         if (lightHsv[2] > 0 && blockAccessor is IWorldGenBlockAccessor)
                         {
                             Block oldBlock = blockAccessor.GetBlock(curPos);
-                            ((IWorldGenBlockAccessor)blockAccessor).ScheduleBlockLightUpdate(curPos.Copy(), oldBlock.BlockId, block.BlockId);
+                            ((IWorldGenBlockAccessor)blockAccessor).ScheduleBlockLightUpdate(curPos, oldBlock.BlockId, block.BlockId);
                         }
                     }
 
@@ -420,7 +414,7 @@ namespace Vintagestory.ServerMods
                 if (newBlock.LightHsv[2] > 0 && blockAccessor is IWorldGenBlockAccessor)
                 {
                     Block oldBlock = blockAccessor.GetBlock(curPos);
-                    ((IWorldGenBlockAccessor)blockAccessor).ScheduleBlockLightUpdate(curPos.Copy(), oldBlock.BlockId, newBlock.BlockId);
+                    ((IWorldGenBlockAccessor)blockAccessor).ScheduleBlockLightUpdate(curPos, oldBlock.BlockId, newBlock.BlockId);
                 }
             }
 
@@ -490,6 +484,7 @@ namespace Vintagestory.ServerMods
             cloned.SizeZ = SizeZ;
             cloned.OffsetY = OffsetY;
             cloned.MaxYDiff = MaxYDiff;
+            cloned.MaxBelowSealevel = MaxBelowSealevel;
 
             cloned.GameVersion = GameVersion;
             cloned.FromFileName = FromFileName;
@@ -524,6 +519,15 @@ namespace Vintagestory.ServerMods
                 Init(api.World.BlockAccessor);
                 LoadMetaInformationAndValidate(api.World.BlockAccessor, api.World, FromFileName);
             }
+        }
+
+        public void Unpack(ICoreAPI api, int orientation)
+        {
+            if (orientation > 0 && blocksByPos == null)
+            {
+                TransformWhilePacked(api.World, EnumOrigin.BottomCenter, orientation * 90, null, PathwayBlocksUnpacked != null);
+            }
+            Unpack(api);
         }
     }
 }

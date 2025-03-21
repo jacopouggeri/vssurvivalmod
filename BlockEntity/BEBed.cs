@@ -4,6 +4,7 @@ using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
 using Vintagestory.API.Datastructures;
 using Vintagestory.API.MathTools;
+using Vintagestory.API.Server;
 using Vintagestory.API.Util;
 
 namespace Vintagestory.GameContent
@@ -11,6 +12,8 @@ namespace Vintagestory.GameContent
 
     public class BlockEntityBed : BlockEntity, IMountableSeat, IMountable
     {
+        long restingListener;
+
         static Vec3f eyePos = new Vec3f(0, 0.3f, 0);
 
         float sleepEfficiency = 0.5f;
@@ -23,12 +26,13 @@ namespace Vintagestory.GameContent
         string mountedByPlayerUid;
         EntityControls controls = new EntityControls();
         EntityPos mountPos = new EntityPos();
-
+        public bool DoTeleportOnUnmount { get; set; } = true;
 
         public EntityPos SeatPosition => Position; // Since we have only one seat, it can be the same as the base position
         public EntityPos Position
         {
-            get {
+            get
+            {
                 BlockFacing facing = this.facing.Opposite;
 
                 mountPos.SetPos(Pos);
@@ -42,12 +46,12 @@ namespace Vintagestory.GameContent
                 return null;
             }
         }
-        
+
         AnimationMetaData meta = new AnimationMetaData() { Code = "sleep", Animation = "lie" }.Init();
         public AnimationMetaData SuggestedAnimation => meta;
         public EntityControls Controls => controls;
         public IMountable MountSupplier => this;
-        public EnumMountAngleMode AngleMode => EnumMountAngleMode.FixateYaw;        
+        public EnumMountAngleMode AngleMode => EnumMountAngleMode.FixateYaw;
         public Vec3f LocalEyePos => eyePos;
         Entity IMountableSeat.Passenger => MountedBy;
         public bool CanControl => false;
@@ -61,10 +65,12 @@ namespace Vintagestory.GameContent
 
         public string SeatId { get => "bed-0"; set { } }
 
-        public SeatConfig Config { get => null; set {} }
-        public long PassengerEntityIdForInit { get => mountedByEntityId; set => mountedByEntityId=value; }
+        public SeatConfig Config { get => null; set { } }
+        public long PassengerEntityIdForInit { get => mountedByEntityId; set => mountedByEntityId = value; }
 
         public Entity Controller => MountedBy;
+
+        public Entity OnEntity => null;
 
         public override void Initialize(ICoreAPI api)
         {
@@ -74,7 +80,7 @@ namespace Vintagestory.GameContent
             if (Block.Attributes != null) sleepEfficiency = Block.Attributes["sleepEfficiency"].AsFloat(0.5f);
 
             Cuboidf[] collboxes = Block.GetCollisionBoxes(api.World.BlockAccessor, Pos);
-            if (collboxes!=null && collboxes.Length > 0) y2 = collboxes[0].Y2;
+            if (collboxes != null && collboxes.Length > 0) y2 = collboxes[0].Y2;
 
             facing = BlockFacing.FromCode(Block.LastCodePart());
 
@@ -82,7 +88,7 @@ namespace Vintagestory.GameContent
             if (MountedBy == null && (mountedByEntityId != 0 || mountedByPlayerUid != null))
             {
                 var entity = mountedByPlayerUid != null ? api.World.PlayerByUid(mountedByPlayerUid)?.Entity : api.World.GetEntityById(mountedByEntityId) as EntityAgent;
-                if (entity != null)
+                if (entity?.SidedProperties != null) // Player entity might not be initialized if we load a sleeping player from spawnchunks
                 {
                     entity.TryMount(this);
                 }
@@ -140,7 +146,7 @@ namespace Vintagestory.GameContent
         }
 
 
-        
+
 
         public override void FromTreeAttributes(ITreeAttribute tree, IWorldAccessor worldForResolving)
         {
@@ -158,7 +164,7 @@ namespace Vintagestory.GameContent
             tree.SetLong("mountedByEntityId", mountedByEntityId);
             tree.SetString("mountedByPlayerUid", mountedByPlayerUid);
         }
-        
+
 
         public void MountableToTreeAttributes(TreeAttribute tree)
         {
@@ -190,7 +196,8 @@ namespace Vintagestory.GameContent
             mountedByEntityId = 0;
             mountedByPlayerUid = null;
 
-            base.OnBlockRemoved();
+            UnregisterGameTickListener(restingListener);
+            restingListener = 0;
         }
 
         public void DidMount(EntityAgent entityAgent)
@@ -213,12 +220,22 @@ namespace Vintagestory.GameContent
 
             if (Api?.Side == EnumAppSide.Server)
             {
-                RegisterGameTickListener(RestPlayer, 200);
+                if (restingListener == 0)
+                {
+                    restingListener = RegisterGameTickListener(RestPlayer, 200);
+                }
                 hoursTotal = Api.World.Calendar.TotalHours;
             }
 
-            EntityBehaviorTiredness ebt = MountedBy?.GetBehavior("tiredness") as EntityBehaviorTiredness;
-            if (ebt != null) ebt.IsSleeping = true;
+            if (MountedBy != null)
+            {
+                Api.Event.EnqueueMainThreadTask(() => // Might not be initialized yet if this is loaded from spawnchunks
+                {
+                    EntityBehaviorTiredness ebt = MountedBy.GetBehavior("tiredness") as EntityBehaviorTiredness;
+                    if (ebt != null) ebt.IsSleeping = true;
+                }, "issleeping");
+            }
+            
 
             MarkDirty(false);
         }
@@ -226,7 +243,7 @@ namespace Vintagestory.GameContent
         public bool IsMountedBy(Entity entity) => this.MountedBy == entity;
         public bool IsBeingControlled() => false;
         public bool CanUnmount(EntityAgent entityAgent) => true;
-        public bool CanMount(EntityAgent entityAgent) => true;
+        public bool CanMount(EntityAgent entityAgent) => !AnyMounted();
 
         public bool AnyMounted() => MountedBy != null;
     }

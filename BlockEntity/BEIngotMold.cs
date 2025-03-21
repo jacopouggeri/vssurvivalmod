@@ -191,9 +191,12 @@ namespace Vintagestory.GameContent
                     return GetShatteredStack(ContentsLeft, FillLevelLeft);
                 }
 
-                ItemStack outstack = ContentsLeft.Clone();
-                (outstack.Attributes["temperature"] as ITreeAttribute)?.RemoveAttribute("cooldownSpeed");
-                return outstack;
+                if (TemperatureLeft < 300)
+                {
+                    ItemStack outstack = ContentsLeft.Clone();
+                    (outstack.Attributes["temperature"] as ITreeAttribute)?.RemoveAttribute("cooldownSpeed");
+                    return outstack;
+                }
             }
 
             return null;
@@ -212,9 +215,12 @@ namespace Vintagestory.GameContent
                     return GetShatteredStack(ContentsRight, FillLevelRight);
                 }
 
-                ItemStack outstack = ContentsRight.Clone();
-                (outstack.Attributes["temperature"] as ITreeAttribute)?.RemoveAttribute("cooldownSpeed");
-                return outstack;
+                if (TemperatureRight < 300)
+                {
+                    ItemStack outstack = ContentsRight.Clone();
+                    (outstack.Attributes["temperature"] as ITreeAttribute)?.RemoveAttribute("cooldownSpeed");
+                    return outstack;
+                }
             }
 
             return null;
@@ -297,8 +303,8 @@ namespace Vintagestory.GameContent
 
         protected bool TryTakeMold(IPlayer byPlayer, Vec3d hitPosition)
         {
-            ItemSlot activeSlot = byPlayer.InventoryManager.ActiveHotbarSlot;
-            if (activeSlot.Itemstack != null && !(activeSlot.Itemstack.Collectible is BlockToolMold)) return false;
+            var activeStack = byPlayer.InventoryManager.ActiveHotbarSlot.Itemstack;
+            if (activeStack != null && activeStack.Collectible is not BlockToolMold and not BlockIngotMold) return false;
             if (FillLevelLeft != 0 || FillLevelRight != 0) return false;
 
             var itemStack = new ItemStack(Block);
@@ -676,9 +682,11 @@ namespace Vintagestory.GameContent
                 }
                 else
                 {
+                    string mat = ContentsLeft.Collectible?.Variant["metal"];
+                    string contentsLocalized = mat == null ? ContentsLeft.GetName() : Lang.Get("material-" + mat);
                     string state = IsLiquidLeft ? Lang.Get("liquid") : (IsHardenedLeft ? Lang.Get("hardened") : Lang.Get("soft"));
                     string temp = TemperatureLeft < 21 ? Lang.Get("Cold") : Lang.Get("{0}°C", (int)TemperatureLeft);
-                    contents = Lang.Get("{0} units of {1} {2} ({3})", FillLevelLeft, state, ContentsLeft.GetName(), temp) + "\n";
+                    contents = Lang.Get("{0} units of {1} {2} ({3})", FillLevelLeft, state, contentsLocalized, temp) + "\n";
                 }
             }
 
@@ -690,9 +698,11 @@ namespace Vintagestory.GameContent
                 }
                 else
                 {
+                    string mat = ContentsRight.Collectible?.Variant["metal"];
+                    string contentsLocalized = mat == null ? ContentsRight.GetName() : Lang.Get("material-" + mat);
                     string state = IsLiquidRight ? Lang.Get("liquid") : (IsHardenedRight ? Lang.Get("hardened") : Lang.Get("soft"));
                     string temp = TemperatureRight < 21 ? Lang.Get("Cold") : Lang.Get("{0}°C", (int)TemperatureRight);
-                    contents += Lang.Get("{0} units of {1} {2} ({3})", FillLevelRight, state, ContentsRight.GetName(), temp) + "\n";
+                    contents += Lang.Get("{0} units of {1} {2} ({3})", FillLevelRight, state, contentsLocalized, temp) + "\n";
                 }
             }
 

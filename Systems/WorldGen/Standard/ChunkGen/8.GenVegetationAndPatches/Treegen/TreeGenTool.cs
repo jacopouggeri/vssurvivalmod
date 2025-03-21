@@ -1,5 +1,4 @@
-﻿using System;
-using System.Globalization;
+﻿using System.Globalization;
 using Vintagestory.API.Common;
 using Vintagestory.API.Config;
 using Vintagestory.API.MathTools;
@@ -18,7 +17,7 @@ namespace Vintagestory.ServerMods
 
     internal class TreeGenTool : ToolBase
     {
-        private readonly LCGRandom _rand;
+        private readonly IRandom _rand;
         private TreeGeneratorsUtil _treeGenerators;
 
         public float MinTreeSize
@@ -57,7 +56,7 @@ namespace Vintagestory.ServerMods
 
         public TreeGenTool(WorldEditWorkspace workspace, IBlockAccessorRevertable blockAccess) : base(workspace, blockAccess)
         {
-            _rand = new LCGRandom();
+            _rand = new NormalRandom();
             if (!workspace.FloatValues.ContainsKey("std.treeToolMinTreeSize")) MinTreeSize = 0.7f;
             if (!workspace.FloatValues.ContainsKey("std.treeToolMaxTreeSize")) MaxTreeSize = 1.3f;
             if (!workspace.StringValues.ContainsKey("std.treeToolTreeVariant")) TreeVariant = null;
@@ -176,13 +175,12 @@ namespace Vintagestory.ServerMods
             return false;
         }
 
-        public override void OnBuild(WorldEdit.WorldEdit worldEdit, int oldBlockId, BlockSelection blockSel, ItemStack withItemStack)
+        public override void OnInteractStart(WorldEdit.WorldEdit worldEdit, BlockSelection blockSelection)
         {
             if (_treeGenerators == null)
             {
                 _treeGenerators = new TreeGeneratorsUtil(worldEdit.sapi);
             }
-            _rand.SetWorldSeed(worldEdit.sapi.World.Seed);
 
             if (TreeVariant == null)
             {
@@ -191,8 +189,7 @@ namespace Vintagestory.ServerMods
                 return;
             }
 
-            worldEdit.sapi.World.BlockAccessor.SetBlock(oldBlockId, blockSel.Position);
-            blockSel.Position.Add(blockSel.Face.Opposite); // - prevented trees from growing o.O   - seems to work again and with this disabled trees float in the air 0.O
+            blockSelection.Position.Add(blockSelection.Face.Opposite); // - prevented trees from growing o.O   - seems to work again and with this disabled trees float in the air 0.O
 
             ba.ReadFromStagedByDefault = true;
 
@@ -206,9 +203,8 @@ namespace Vintagestory.ServerMods
                 vinesGrowthChance = VinesGrowthChance
             };
 
-            gen.GrowTree(ba, blockSel.Position, treeParams, _rand);
+            gen.GrowTree(ba, blockSelection.Position, treeParams, _rand);
 
-            ba.SetHistoryStateBlock(blockSel.Position.X, blockSel.Position.Y, blockSel.Position.Z, oldBlockId, ba.GetStagedBlockId(blockSel.Position));
             ba.Commit();
         }
     }

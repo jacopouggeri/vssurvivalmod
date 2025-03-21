@@ -1,5 +1,4 @@
-﻿using Cairo.Freetype;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -228,6 +227,8 @@ namespace Vintagestory.GameContent
 
             if (bemc?.BlockIds != null && (bemc.sideAlmostSolid[facing.Index] || bemc.sideAlmostSolid[facing.Opposite.Index]) && bemc.BlockIds.Length > 0 && bemc.VolumeRel >= 0.5f)
             {
+                if (type == EnumRetentionType.Sound) return 10;
+
                 Block block = api.World.GetBlock(bemc.BlockIds[0]);
                 var mat = block.BlockMaterial;
                 if (mat == EnumBlockMaterial.Ore || mat == EnumBlockMaterial.Stone || mat == EnumBlockMaterial.Soil || mat == EnumBlockMaterial.Ceramic)
@@ -380,7 +381,7 @@ namespace Vintagestory.GameContent
 
         public virtual bool IsSoilNonSoilMix(BlockEntityMicroBlock be)
         {
-            if (be == null) return false;
+            if (be?.BlockIds == null) return false;
             bool hasSoil = false;
             bool hasNonSoil = false;
 
@@ -669,22 +670,33 @@ namespace Vintagestory.GameContent
         {
             if (itemStack.Attributes.HasAttribute("blockName"))
             {
-                return itemStack.Attributes.GetString("blockName", "").Split('\n')[0];
+                string blockName = itemStack.Attributes.GetString("blockName");
+                if (blockName != "") return blockName.Split('\n')[0];
             }
 
-            return base.GetHeldItemName(itemStack);
+            var blockIds = BlockEntityMicroBlock.MaterialIdsFromAttributes(itemStack.Attributes, api.World);
+            var voxelCuboids = new List<uint>(BlockEntityMicroBlock.GetVoxelCuboids(itemStack.Attributes));
+
+            int mblockid = BlockEntityMicroBlock.getMajorityMaterial(voxelCuboids, blockIds);
+            Block majorityBlock = api.World.Blocks[mblockid];
+            return majorityBlock.GetHeldItemName(new ItemStack(majorityBlock));
         }
 
         public override void GetHeldItemInfo(ItemSlot inSlot, StringBuilder dsc, IWorldAccessor world, bool withDebugInfo)
         {
             var tree = inSlot.Itemstack.Attributes;
             string blockName = tree.GetString("blockName", null);
-            var blockIds = BlockEntityMicroBlock.MaterialIdsFromAttributes(tree, world);
-            var voxelCuboids = new List<uint>(BlockEntityMicroBlock.GetVoxelCuboids(tree));
 
-            dsc.AppendLine(BlockEntityMicroBlock.GetPlacedBlockName(api, voxelCuboids, blockIds, blockName));
+            int nind = blockName.IndexOf('\n');
+            if (nind > 0)
+            {
+                dsc.AppendLine(blockName.Substring(nind + 1));
+            }
 
             base.GetHeldItemInfo(inSlot, dsc, world, withDebugInfo);
+
+            dsc.AppendLine();
+            dsc.AppendLine("<font color=\"#bbbbbb\">" + API.Config.Lang.Get("block-chiseledblock") + "</font>");
         }
 
         public override string GetPlacedBlockName(IWorldAccessor world, BlockPos pos)
@@ -703,8 +715,6 @@ namespace Vintagestory.GameContent
             }
         }
 
-        // public override void OnLoadCollectibleMappings(IWorldAccessor worldForResolve, ItemSlot inSlot, Dictionary<int, AssetLocation> oldBlockIdMapping,
-        //     Dictionary<int, AssetLocation> oldItemIdMapping, bool resolveImports)
         public override void OnLoadCollectibleMappings(IWorldAccessor worldForResolve, ItemSlot inSlot, Dictionary<int, AssetLocation> oldBlockIdMapping,
             Dictionary<int, AssetLocation> oldItemIdMapping, bool resolveImports)
         {

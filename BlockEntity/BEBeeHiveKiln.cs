@@ -213,6 +213,12 @@ public class BlockEntityBeeHiveKiln : BlockEntity, IRotatable
         var minHeatHours = float.MaxValue;
         var beforeReceiveHeat = receivesHeat;
         var beforeStructureComplete = StructureComplete;
+
+        if (!receivesHeat)
+        {
+            TotalHoursLastUpdate = Api.World.Calendar.TotalHours;
+        }
+
         receivesHeat = true;
         for (int j = 0; j < 9; j++)
         {
@@ -307,7 +313,7 @@ public class BlockEntityBeeHiveKiln : BlockEntity, IRotatable
                     float itemHoursHeatReceived = 0;
                     var collectible = itemSlot.Itemstack.Collectible;
 
-                    if (collectible.CombustibleProps?.SmeltedStack.ResolvedItemstack.Block?.BlockMaterial == EnumBlockMaterial.Ceramic
+                    if (collectible.CombustibleProps?.SmeltedStack?.ResolvedItemstack.Block?.BlockMaterial == EnumBlockMaterial.Ceramic
                         ||  collectible.CombustibleProps?.SmeltingType == EnumSmeltType.Fire
                         || collectible.Attributes?["beehivekiln"].Exists == true)
                     {
@@ -409,7 +415,7 @@ public class BlockEntityBeeHiveKiln : BlockEntity, IRotatable
                 (haveBlock, wantLoc) =>
                 {
                     var firstCodePart = haveBlock.FirstCodePart();
-                    if ((firstCodePart == "refractorybricks" ||firstCodePart == "refractorybrickgrating") && haveBlock.Variant["state"] == "damaged")
+                    if ((firstCodePart == "refractorybricks" || firstCodePart == "claybricks" || firstCodePart == "refractorybrickgrating") && haveBlock.Variant["state"] == "damaged")
                     {
                         damagedTiles++;
                     }

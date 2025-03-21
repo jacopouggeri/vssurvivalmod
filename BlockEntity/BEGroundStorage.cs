@@ -860,7 +860,9 @@ namespace Vintagestory.GameContent
 
             if (invSlot.Empty)
             {
-                if (hotbarSlot.TryPutInto(Api.World, invSlot, TransferQuantity) > 0)
+                bool putBulk = player.Entity.Controls.CtrlKey;
+
+                if (hotbarSlot.TryPutInto(Api.World, invSlot, putBulk ? BulkTransferQuantity : TransferQuantity) > 0)
                 {
                     Api.World.PlaySoundAt(StorageProps.PlaceRemoveSound.WithPathPrefixOnce("sounds/"), Pos.X + 0.5, Pos.InternalY, Pos.Z + 0.5, null, 0.88f + (float)Api.World.Rand.NextDouble() * 0.24f, 16);
                 }
@@ -1062,6 +1064,7 @@ namespace Vintagestory.GameContent
                 if (listenerId != 0)
                 {
                     UnregisterGameTickListener(listenerId);
+                    listenerId = 0;
                 }
                 ambientSound?.Stop();
                 listenerId = 0;
@@ -1153,7 +1156,7 @@ namespace Vintagestory.GameContent
                     if (temperature > 20)
                     {
                         var f = slot.Itemstack?.Attributes.GetFloat("hoursHeatReceived") ?? 0;
-                        dsc.AppendLine(Lang.Get("Temperature: {0:0.##}°C", temperature));
+                        dsc.AppendLine(Lang.Get("temperature-precise", temperature));
                         if (f > 0) dsc.AppendLine(Lang.Get("Fired for {0:0.##} hours", f));
                     }
                 }
@@ -1319,9 +1322,12 @@ namespace Vintagestory.GameContent
             {
                 var key = getMeshCacheKey(stack);
                 var mesh = getMesh(stack);
-                UploadedMeshCache.TryGetValue(key, out MeshRefs[index]);
 
-                if (mesh != null) return mesh;
+                if (mesh != null)
+                {
+                    UploadedMeshCache.TryGetValue(key, out MeshRefs[index]);
+                    return mesh;
+                }
 
                 var loc = StorageProps.StackingModel.Clone().WithPathPrefixOnce("shapes/").WithPathAppendixOnce(".json");
                 nowTesselatingShape = Shape.TryGet(capi, loc);
@@ -1336,7 +1342,9 @@ namespace Vintagestory.GameContent
                 capi.Tesselator.TesselateShape("storagePile", nowTesselatingShape, out mesh, this, null, 0, 0, 0, (int)Math.Ceiling(StorageProps.ModelItemsToStackSizeRatio * stack.StackSize));
 
                 MeshCache[key] = mesh;
-                UploadedMeshCache[key]= capi.Render.UploadMultiTextureMesh(mesh);
+
+                if (UploadedMeshCache.TryGetValue(key, out var mr)) mr.Dispose();
+                UploadedMeshCache[key] = capi.Render.UploadMultiTextureMesh(mesh);
                 MeshRefs[index] = UploadedMeshCache[key];
                 return mesh;
             }
@@ -1508,11 +1516,6 @@ namespace Vintagestory.GameContent
         {
             base.OnBlockUnloaded();
             renderer?.Dispose();
-            if (listenerId != 0)
-            {
-                Api.Event.UnregisterGameTickListener(listenerId);
-                listenerId = 0;
-            }
             ambientSound?.Stop();
         }
 
@@ -1520,11 +1523,6 @@ namespace Vintagestory.GameContent
         {
             base.OnBlockRemoved();
             renderer?.Dispose();
-            if (listenerId != 0)
-            {
-                Api.Event.UnregisterGameTickListener(listenerId);
-                listenerId = 0;
-            }
             ambientSound?.Stop();
         }
 

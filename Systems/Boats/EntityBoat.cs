@@ -153,7 +153,7 @@ namespace Vintagestory.GameContent
         /// <summary>
         /// The speed this boat can reach at full power
         /// </summary>
-        public virtual float SpeedMultiplier => 1f;
+        public virtual float SpeedMultiplier { get; set; } = 1f;
 
         public double RenderOrder => 0;
         public int RenderRange => 999;
@@ -175,6 +175,8 @@ namespace Vintagestory.GameContent
         public override void Initialize(EntityProperties properties, ICoreAPI api, long InChunkIndex3d)
         {
             swimmingOffsetY = properties.Attributes["swimmingOffsetY"].AsDouble();
+            SpeedMultiplier = properties.Attributes["speedMultiplier"].AsFloat(1f);
+
             MountAnimations = properties.Attributes["mountAnimations"].AsObject<Dictionary<string, string>>();
 
 
@@ -259,7 +261,6 @@ namespace Vintagestory.GameContent
                 {
                     Die();
                 }
-
 
                 updateBoatAngleAndMotion(dt);
             }
@@ -430,7 +431,10 @@ namespace Vintagestory.GameContent
                 if (!controls.TriesToMove)
                 {
                     seat.actionAnim = null;
-                    seat.Passenger.AnimManager?.StartAnimation(MountAnimations["ready"]);
+                    if (seat.Passenger.AnimManager != null && !seat.Passenger.AnimManager.IsAnimationActive(MountAnimations["ready"]))
+                    {
+                        seat.Passenger.AnimManager.StartAnimation(MountAnimations["ready"]);
+                    }
                     continue;
                 } else
                 {
@@ -461,7 +465,7 @@ namespace Vintagestory.GameContent
                     var yawdist = Math.Abs(GameMath.AngleRadDistance(SidedPos.Yaw, seat.Passenger.SidedPos.Yaw));
                     bool isLookingBackwards = yawdist > GameMath.PIHALF;
 
-                    if (isLookingBackwards) dir *= -1;
+                    if (isLookingBackwards && requiresPaddlingTool) dir *= -1;
 
                     linearMotion += str * dir * dt * 2f;
                 }

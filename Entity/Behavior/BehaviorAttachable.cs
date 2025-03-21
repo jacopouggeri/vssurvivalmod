@@ -1,6 +1,4 @@
-﻿using Cairo;
-using System;
-using System.Collections;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using Vintagestory.API.Client;
@@ -143,7 +141,7 @@ namespace Vintagestory.GameContent
                     }
                     continue;
                 }
-                
+
                 var attrseatconfig = itemslot.Itemstack?.ItemAttributes?["attachableToEntity"]?["seatConfig"]?.AsObject<SeatConfig>();
                 if (attrseatconfig != null)
                 {
@@ -151,7 +149,7 @@ namespace Vintagestory.GameContent
                     attrseatconfig.APName = slotcfg.AttachmentPointCode;
 
                     slotcfg.SeatConfig = attrseatconfig;
-                    
+
                     ivsm.RegisterSeat(slotcfg.SeatConfig);
                     slotcfg.ProvidesSeatId = slotcfg.SeatConfig.SeatId;
                 } else
@@ -182,6 +180,7 @@ namespace Vintagestory.GameContent
 
             return base.TryGiveItemStack(itemstack, ref handling);
         }
+
         public override void OnInteract(EntityAgent byEntity, ItemSlot itemslot, Vec3d hitPosition, EnumInteractMode mode, ref EnumHandling handled)
         {
             int seleBox = (byEntity as EntityPlayer).EntitySelection?.SelectionBoxIndex ?? -1;
@@ -194,7 +193,7 @@ namespace Vintagestory.GameContent
 
             var controls = byEntity.MountedOn?.Controls ?? byEntity.Controls;
 
-            if (mode == EnumInteractMode.Interact && !controls.Sprint)
+            if (mode == EnumInteractMode.Interact && !controls.CtrlKey)
             {
                 if (slot.Itemstack?.Collectible.Attributes?.IsTrue("interactPassthrough") == true)
                 {
@@ -212,7 +211,7 @@ namespace Vintagestory.GameContent
                     return;
                 }
             }
-            
+
             var iai = slot.Itemstack?.Collectible.GetCollectibleInterface<IAttachedInteractions>();
             if (iai != null)
             {
@@ -222,7 +221,7 @@ namespace Vintagestory.GameContent
             }
 
 
-            if (mode != EnumInteractMode.Interact || !controls.Sprint)
+            if (mode != EnumInteractMode.Interact || !controls.CtrlKey)
             {
                 handled = EnumHandling.PassThrough; // Can't attack an elk with a falx otherwise
                 return;
@@ -282,11 +281,25 @@ namespace Vintagestory.GameContent
             {
                 return false;
             }
-            
-            if (slot.StackSize == 0 || byEntity.TryGiveItemStack(slot.Itemstack))
+
+            var ebho = entity.GetBehavior<EntityBehaviorOwnable>();
+            if (ebho != null && !ebho.IsOwner(byEntity))
+            {
+                (entity.World.Api as ICoreClientAPI)?.TriggerIngameError(this, "requiersownership", Lang.Get("mount-interact-requiresownership"));
+                return false;
+            }
+
+            bool wasEmptyAlready = slot.StackSize == 0;
+            if (wasEmptyAlready || byEntity.TryGiveItemStack(slot.Itemstack))
             {
                 IAttachedListener attached = slot.Itemstack?.Collectible.GetCollectibleInterface<IAttachedListener>();
                 attached?.OnDetached(slot, slotIndex, entity, byEntity);
+
+                if (Api.Side == EnumAppSide.Server && !wasEmptyAlready)
+                {
+                    slot.Itemstack.StackSize = 1;
+                    Api.World.Logger.Audit("{0} removed from a {1} at {2}, slot {4}: {3}", byEntity?.GetName(), entity.Code.ToShortString(), entity.ServerPos.AsBlockPos, slot.Itemstack?.ToString(), slotIndex);
+                }
 
                 slot.Itemstack = null;
                 storeInv();
@@ -309,6 +322,13 @@ namespace Vintagestory.GameContent
             if (!slotConfig.CanHold(code)) return false;
             if (!targetSlot.Empty) return false;
 
+            var ebho = entity.GetBehavior<EntityBehaviorOwnable>();
+            if (ebho != null && !ebho.IsOwner(byEntity))
+            {
+                (entity.World.Api as ICoreClientAPI)?.TriggerIngameError(this, "requiersownership", Lang.Get("mount-interact-requiresownership"));
+                return false;
+            }
+
             // Cannot attach something where a player already sits on
             var bhs = entity.GetBehavior<EntityBehaviorSeatable>();
             if (bhs?.Seats.FirstOrDefault(s => s.Config.APName == slotConfig.AttachmentPointCode)?.Passenger != null) return false;
@@ -320,9 +340,11 @@ namespace Vintagestory.GameContent
 
             if (entity.World.Side == EnumAppSide.Server)
             {
+                string auditLog = String.Format("{0} attached to a {1} at {2}, slot {4}: {3}", byEntity?.GetName(), entity.Code.ToShortString(), entity.ServerPos.AsBlockPos, itemslot.Itemstack.ToString(), slotIndex);
                 var moved = itemslot.TryPutInto(entity.World, targetSlot) > 0;
                 if (moved)
                 {
+                    Api.World.Logger.Audit(auditLog);
                     ial?.OnAttached(itemslot, slotIndex, entity, byEntity);
                     storeInv();
                 }
@@ -330,7 +352,7 @@ namespace Vintagestory.GameContent
                 return moved;
             }
 
-            return true;           
+            return true;
         }
 
 
@@ -419,7 +441,18 @@ namespace Vintagestory.GameContent
             return entity.GetBehavior<EntityBehaviorSelectionBoxes>().GetCenterPosOfBox(selebox)?.Add(0, 0.5, 0);
         }
 
-        
+        public override void OnEntityDeath(DamageSource damageSourceForDeath)
+        {
+            int i = 0;
+            foreach (var slot in inv)
+            {
+                var iai = slot.Itemstack?.Collectible.GetCollectibleInterface<IAttachedInteractions>();
+                iai?.OnEntityDeath(slot, i++, entity, damageSourceForDeath);
+            }
+
+            base.OnEntityDeath(damageSourceForDeath);
+        }
+
 
         public bool TransparentCenter => false;
     }
@@ -481,7 +514,7 @@ namespace Vintagestory.GameContent
 
             if (stacks.Count == 0) return null;
 
-            
+
 
 
             return new WorldInteraction[]

@@ -3,6 +3,7 @@ using Vintagestory.API.Client.Tesselation;
 using Vintagestory.API.Common;
 using Vintagestory.API.Datastructures;
 using Vintagestory.API.MathTools;
+using Vintagestory.API.Util;
 
 namespace Vintagestory.GameContent
 {
@@ -20,10 +21,12 @@ namespace Vintagestory.GameContent
         {
             base.OnJsonTesselation(ref sourceMesh, ref lightRgbsByCorner, pos, chunkExtBlocks, extIndex3d);
 
-            for (int i = 0; i < sourceMesh.FlagsCount; i++)
+            var sourcemeshFlags = sourceMesh.Flags;
+            int flagsCount = sourceMesh.FlagsCount;
+            int vertical = VertexFlags.PackNormal(0, 1, 0);
+            for (int i = 0; i < flagsCount; i++)
             {
-                sourceMesh.Flags[i] &= VertexFlags.ClearNormalBitMask;
-                sourceMesh.Flags[i] |= VertexFlags.PackNormal(0, 1, 0);
+                sourcemeshFlags[i] = (sourcemeshFlags[i] & VertexFlags.ClearNormalBitMask) | vertical;
             }
         }
     }
@@ -104,16 +107,20 @@ namespace Vintagestory.GameContent
             int clearFlags = VertexFlags.WindBitsMask;
             int verticesCount = sourceMesh.VerticesCount;
 
+            int windToApply = allFlags | ExtraBend;
+
             // Iterate over each element face
+            var sourceMeshFlags = sourceMesh.Flags;
+            var sourceMeshXyz = sourceMesh.xyz;
             for (int vertexNum = 0; vertexNum < verticesCount; vertexNum++)
             {
-                int flag = sourceMesh.Flags[vertexNum] & clearFlags;
+                int flag = sourceMeshFlags[vertexNum] & clearFlags;
 
-                if (!off && sourceMesh.xyz[vertexNum * 3 + 1] > 0.5)
+                if (!off && sourceMeshXyz[vertexNum * 3 + 1] > 0.5)
                 {
-                    flag |= allFlags | ExtraBend;
+                    flag |= windToApply;
                 }
-                sourceMesh.Flags[vertexNum] = flag;
+                sourceMeshFlags[vertexNum] = flag;
             }
         }
 

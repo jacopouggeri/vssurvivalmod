@@ -18,12 +18,12 @@ namespace Vintagestory.GameContent
         Block fuelBlock;
         string startedByPlayerUid;
 
-        ILoadedSound ambientSound;
         static Cuboidf fireCuboid = new Cuboidf(-0.125f, 0, -0.125f, 1.125f, 1, 1.125f);
         WeatherSystemBase wsys;
         Vec3d tmpPos = new Vec3d();
 
-
+        ICoreClientAPI capi;
+        
         public float TimePassed
         {
             get { return startDuration - remainingBurnDuration; }
@@ -102,6 +102,13 @@ namespace Vintagestory.GameContent
             {
                 initSoundsAndTicking();
             }
+
+            capi = api as ICoreClientAPI;
+
+            if (capi != null)
+            {
+                capi.Event.RegisterAsyncParticleSpawner(onAsyncParticles);
+            }
         }
 
         public void OnFirePlaced(BlockFacing fromFacing, string startedByPlayerUid)
@@ -109,11 +116,28 @@ namespace Vintagestory.GameContent
             OnFirePlaced(Blockentity.Pos, Blockentity.Pos.AddCopy(fromFacing.Opposite), startedByPlayerUid);
         }
 
-        public void OnFirePlaced(BlockPos firePos, BlockPos fuelPos, string startedByPlayerUid)
+        public void OnFirePlaced(BlockPos firePos, BlockPos fuelPos, string startedByPlayerUid, bool didSpread = false)
         {
             if (IsBurning || !ShouldBurn()) return;
 
             this.startedByPlayerUid = startedByPlayerUid;
+
+            if (!string.IsNullOrEmpty(startedByPlayerUid))
+            {
+                var playerByUid = Api.World.PlayerByUid(startedByPlayerUid);
+                if (playerByUid != null)
+                {
+                    if (didSpread)
+                    {
+                        Api.Logger.Audit($"{playerByUid.PlayerName} started a fire that spread to {firePos}");   
+                    }
+                    else
+                    {
+                        Api.Logger.Audit($"{playerByUid.PlayerName} started a fire at {firePos}");
+                    }
+                }
+            }
+            
 
             FirePos = firePos.Copy();
             FuelPos = fuelPos.Copy();
@@ -158,7 +182,7 @@ namespace Vintagestory.GameContent
         }
 
         BlockFacing particleFacing;
-
+         
         private void initSoundsAndTicking()
         {
             fuelBlock = Api.World.BlockAccessor.GetBlock(FuelPos);
@@ -171,29 +195,25 @@ namespace Vintagestory.GameContent
 
             wsys = Api.ModLoader.GetModSystem<WeatherSystemBase>();
 
-            if (ambientSound == null && Api.Side == EnumAppSide.Client)
-            {
-                ambientSound = ((IClientWorldAccessor)Api.World).LoadSound(new SoundParams()
-                {
-                    Location = new AssetLocation("sounds/environment/fire.ogg"),
-                    ShouldLoop = true,
-                    Position = FirePos.ToVec3f().Add(0.5f, 0.25f, 0.5f),
-                    DisposeOnFinish = false,
-                    Volume = 1f
-                });
-
-                if (ambientSound != null)
-                {
-                    ambientSound.PlaybackPosition = ambientSound.SoundLengthSeconds * (float)Api.World.Rand.NextDouble();
-                    ambientSound.Start();
-                }
-            }
+            // To get the ambient sound engine to update quicker
+            Api.World.BlockAccessor.MarkBlockDirty(Pos);
 
             particleFacing = BlockFacing.FromNormal(new Vec3i(FirePos.X - FuelPos.X, FirePos.Y - FuelPos.Y, FirePos.Z - FuelPos.Z));
         }
 
 
+        bool unloaded = false;
+        public override void OnBlockUnloaded()
+        {
+            base.OnBlockUnloaded();
+            unloaded = true;
+        }
 
+        public override void OnBlockRemoved()
+        {
+            base.OnBlockRemoved();
+            unloaded = true;
+        }
 
 
         private void OnSlowServerTick(float dt)
@@ -266,19 +286,23 @@ namespace Vintagestory.GameContent
                     TrySpreadFireAllDirs();
                 }
             }
+        }
 
-            if (Api.Side == EnumAppSide.Client)
-            {
-                int index = Math.Min(fireBlock.ParticleProperties.Length - 1, Api.World.Rand.Next(fireBlock.ParticleProperties.Length + 1));
-                AdvancedParticleProperties particles = fireBlock.ParticleProperties[index];
 
-                particles.basePos = RandomBlockPos(Api.World.BlockAccessor, FuelPos, fuelBlock, particleFacing);
+        private bool onAsyncParticles(float dt, IAsyncParticleManager manager)
+        {
+            if (fuelBlock == null) return true; // Not yet loaded
 
-                particles.Quantity.avg = 0.75f;
-                particles.TerrainCollision = false;
-                Api.World.SpawnParticles(particles);
-                particles.Quantity.avg = 0;
-            }
+            int index = Math.Min(fireBlock.ParticleProperties.Length - 1, Api.World.Rand.Next(fireBlock.ParticleProperties.Length + 1));
+            AdvancedParticleProperties particles = fireBlock.ParticleProperties[index];
+
+            particles.basePos = RandomBlockPos(Api.World.BlockAccessor, FuelPos, fuelBlock, particleFacing);
+            particles.Quantity.avg = index == 1 ? 4 : 0.75f;
+            particles.TerrainCollision = false;
+            manager.Spawn(particles);
+            particles.Quantity.avg = 0;
+
+            return !unloaded && IsBurning;
         }
 
 
@@ -289,8 +313,10 @@ namespace Vintagestory.GameContent
             IsBurning = false;
             Blockentity.UnregisterGameTickListener(l1);
             Blockentity.UnregisterGameTickListener(l2);
-            ambientSound?.FadeOutAndStop(1);
+            l1 = 0;
+            l2 = 0;
             OnFireDeath(consumeFuel);
+            unloaded = true;
         }
 
 
@@ -365,7 +391,7 @@ namespace Vintagestory.GameContent
             }
             else
             {
-                buhu?.OnFirePlaced(pos, npos, startedByPlayerUid);
+                buhu?.OnFirePlaced(pos, npos, startedByPlayerUid, true);
             }
         }
 
@@ -377,34 +403,7 @@ namespace Vintagestory.GameContent
                 && Api.ModLoader.GetModSystem<ModSystemBlockReinforcement>()?.IsReinforced(pos) != true
             ;
         }
-
-        public override void OnBlockRemoved()
-        {
-            base.OnBlockRemoved();
-            killAmbientSound();
-        }
-
-        public override void OnBlockUnloaded()
-        {
-            base.OnBlockUnloaded();
-            killAmbientSound();
-        }
-
-        ~BEBehaviorBurning()
-        {
-            killAmbientSound();
-        }
-
-        void killAmbientSound()
-        {
-            if (ambientSound != null)
-            {
-                ambientSound?.Stop();
-                ambientSound?.Dispose();
-                ambientSound = null;
-            }
-        }
-
+        
         public override void FromTreeAttributes(ITreeAttribute tree, IWorldAccessor worldAccessForResolve)
         {
             base.FromTreeAttributes(tree, worldAccessForResolve);

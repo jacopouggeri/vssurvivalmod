@@ -62,7 +62,8 @@ namespace Vintagestory.GameContent
             {
                 if (invslot is ItemSlotCreative) return true;
 
-                if (invslot.Itemstack != null && invslot.Itemstack.Collectible.Code.PathStartsWith("arrow-"))
+                ItemStack stack = invslot.Itemstack;
+                if (stack != null && stack.Collectible != null && stack.Collectible.Code.PathStartsWith("arrow-") && stack.StackSize > 0)
                 {
                     slot = invslot;
                     return false;
@@ -183,10 +184,11 @@ namespace Vintagestory.GameContent
             float breakChance = 0.5f;
             if (stack.ItemAttributes != null) breakChance = stack.ItemAttributes["breakChanceOnImpact"].AsFloat(0.5f);
 
-            EntityProperties type = byEntity.World.GetEntityType(new AssetLocation("arrow-" + stack.Collectible.Variant["material"]));
+            EntityProperties type = byEntity.World.GetEntityType(new AssetLocation(stack.ItemAttributes["arrowEntityCode"].AsString("arrow-" + stack.Collectible.Variant["material"])));
             var entityarrow = byEntity.World.ClassRegistry.CreateEntity(type) as EntityProjectile;
             entityarrow.FiredBy = byEntity;
             entityarrow.Damage = damage;
+            entityarrow.DamageTier = Attributes["damageTier"].AsInt(0);
             entityarrow.ProjectileStack = stack;
             entityarrow.DropOnImpactChance = 1 - breakChance;
 

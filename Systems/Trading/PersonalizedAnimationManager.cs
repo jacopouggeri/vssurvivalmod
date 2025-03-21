@@ -20,7 +20,7 @@ namespace Vintagestory.GameContent
                     StopAnimation(Personality + "-idle2");
                 }
 
-                return StartAnimation(new AnimationMetaData()
+                return base.StartAnimation(new AnimationMetaData()     // We call base.StartAnimation to avoid calling Personalize(), we already did the Personalization in this method
                 {
                     Animation = Personality + "-" + configCode,
                     Code = Personality + "-" + configCode,
@@ -33,9 +33,9 @@ namespace Vintagestory.GameContent
             return base.StartAnimation(configCode);
         }
 
-        public override bool StartAnimation(AnimationMetaData animdata)
+        public AnimationMetaData Personalize(AnimationMetaData animdata)
         {
-            if ((animdata.Code == "idle2" || animdata.Code == "laugh") && ActiveAnimationsByAnimCode.ContainsKey(Personality + "-welcome")) return false;
+            if ((animdata.Code == "idle2" || animdata.Code == "laugh") && ActiveAnimationsByAnimCode.ContainsKey(Personality + "-welcome")) return null;
 
             if (Personality == "formal" || Personality == "rowdy" || Personality == "lazy")
             {
@@ -44,16 +44,29 @@ namespace Vintagestory.GameContent
                 StopAnimation(Personality + "-idle2");
             }
 
-            if (All | PersonalizedAnimations.Contains(animdata.Animation.ToLowerInvariant()))
+            if (All || PersonalizedAnimations.Contains(animdata.Animation.ToLowerInvariant()))
             {
                 animdata = animdata.Clone();
                 animdata.Animation = Personality + "-" + animdata.Animation;
                 animdata.Code = animdata.Animation;
                 animdata.CodeCrc32 = AnimationMetaData.GetCrc32(animdata.Code);
-
             }
 
+            return animdata;
+        }
+
+        public override bool StartAnimation(AnimationMetaData animdata)
+        {
+            animdata = Personalize(animdata);
+            if (animdata == null) return false;
             return base.StartAnimation(animdata);
+        }
+
+        public override bool TryStartAnimation(AnimationMetaData animdata)
+        {
+            animdata = Personalize(animdata);
+            if (animdata == null) return false;
+            return base.TryStartAnimation(animdata);
         }
 
         public override void StopAnimation(string code)

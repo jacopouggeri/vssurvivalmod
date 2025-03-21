@@ -1,5 +1,6 @@
 ﻿using Cairo;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection.Metadata;
@@ -15,7 +16,14 @@ namespace Vintagestory.GameContent
 {
     public delegate bool CanSitDelegate(EntityAgent eagent, out string errorMessage);
 
-    public class EntityBehaviorSeatable : EntityBehavior, IVariableSeatsMountable, IRopeTiedCreatureCarrier
+    public class EntityBehaviorCreatureCarrier : EntityBehaviorSeatable, IRopeTiedCreatureCarrier
+    {
+        public EntityBehaviorCreatureCarrier(Entity entity) : base(entity)
+        {
+        }
+    }
+
+    public class EntityBehaviorSeatable : EntityBehavior, IVariableSeatsMountable
     {
         public IMountableSeat[] Seats { get; set; }
         public SeatConfig[] SeatConfigs;
@@ -27,6 +35,8 @@ namespace Vintagestory.GameContent
         public event CanSitDelegate CanSit;
 
         public Entity Controller { get; set; }
+
+        public Entity OnEntity => entity;
 
         public EntityBehaviorSeatable(Entity entity) : base(entity)
         {
@@ -72,10 +82,10 @@ namespace Vintagestory.GameContent
 
                 if (seat.PassengerEntityIdForInit != 0 && seat.Passenger == null)
                 {
-                    var entity = Api.World.GetEntityById(seat.PassengerEntityIdForInit) as EntityAgent;
-                    if (entity != null)
+                    var byEntity = Api.World.GetEntityById(seat.PassengerEntityIdForInit) as EntityAgent;
+                    if (byEntity != null)
                     {
-                        entity.TryMount(seat);
+                        byEntity.TryMount(seat);
                     }
                 }
             }
@@ -104,7 +114,7 @@ namespace Vintagestory.GameContent
 
         public override void OnInteract(EntityAgent byEntity, ItemSlot itemslot, Vec3d hitPosition, EnumInteractMode mode, ref EnumHandling handled)
         {
-            if (mode != EnumInteractMode.Interact || !entity.Alive) return;
+            if (mode != EnumInteractMode.Interact || !entity.Alive || !byEntity.Alive) return;
             if (!allowSit(byEntity)) return;
             if (itemslot.Itemstack?.Collectible is ItemRope) return;
 
@@ -124,7 +134,7 @@ namespace Vintagestory.GameContent
                 }
             }
 
-            if (byEntity.Controls.Sprint)
+            if (byEntity.Controls.CtrlKey)
             {
                 return;
             }
@@ -139,6 +149,10 @@ namespace Vintagestory.GameContent
                 if (seat != null && CanSitOn(seat) && byEntity.TryMount(seat))
                 {
                     handled = EnumHandling.PreventSubsequent;
+                    if (Api.Side == EnumAppSide.Server)
+                    {
+                        Api.World.Logger.Audit("{0} mounts/embarks a {1} at {2}.", byEntity?.GetName(), entity.Code.ToShortString(), entity.ServerPos.AsBlockPos);
+                    }
                     return;
                 }
 
@@ -180,14 +194,28 @@ namespace Vintagestory.GameContent
             {
                 if (!CanSitOn(seat)) continue;
                 if (!seat.CanControl) continue;
-                if (byEntity.TryMount(seat)) return;
+                if (byEntity.TryMount(seat))
+                {
+                    if (Api.Side == EnumAppSide.Server)
+                    {
+                        Api.World.Logger.Audit("{0} mounts/embarks a {1} at {2}.", byEntity?.GetName(), entity.Code.ToShortString(), entity.ServerPos.AsBlockPos);
+                    }
+                    return;
+                }
             }
 
             // Otherwise just any seat
             foreach (var seat in Seats)
             {
                 if (!CanSitOn(seat)) continue;
-                if (byEntity.TryMount(seat)) return;
+                if (byEntity.TryMount(seat))
+                {
+                    if (Api.Side == EnumAppSide.Server)
+                    {
+                        Api.World.Logger.Audit("{0} mounts/embarks a {1} at {2}.", byEntity?.GetName(), entity.Code.ToShortString(), entity.ServerPos.AsBlockPos);
+                    }
+                    return;
+                }
             }
         }
 
@@ -215,7 +243,7 @@ namespace Vintagestory.GameContent
         {
             if (seatconfig?.SeatId == null) throw new ArgumentNullException("seatConfig.SeatId must be set");
 
-            if (Seats == null) Seats = new EntityBoatSeat[0];
+            if (Seats == null) Seats = new IMountableSeat[0];
 
             int index = Seats.IndexOf(s => s.SeatId == seatconfig.SeatId);
             if (index < 0)
@@ -306,6 +334,15 @@ namespace Vintagestory.GameContent
             }
 
             return base.GetInteractionHelp(world, es, player, ref handled);
+        }
+
+        public override void OnEntityDeath(DamageSource damageSourceForDeath)
+        {
+            base.OnEntityDeath(damageSourceForDeath);
+
+            foreach (var seat in Seats) {
+                (seat?.Passenger as EntityAgent)?.TryUnmount();
+            }
         }
     }
 

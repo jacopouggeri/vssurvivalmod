@@ -2,6 +2,7 @@
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
+using Vintagestory.API.Config;
 using Vintagestory.API.Datastructures;
 using Vintagestory.API.MathTools;
 
@@ -94,6 +95,19 @@ namespace Vintagestory.GameContent
         {
         }
 
+        public override bool CanMount(EntityAgent entityAgent)
+        {
+            if (entityAgent is not EntityPlayer player) return false;
+
+            var ebho = Entity.GetBehavior<EntityBehaviorOwnable>();
+            if (ebho != null && !ebho.IsOwner(player))
+            {
+                (player.World.Api as ICoreClientAPI)?.TriggerIngameError(this, "requiersownership", Lang.Get("mount-interact-requiresownership"));
+                return false;
+            }
+            return true;
+        }
+
         public static IMountableSeat GetMountable(IWorldAccessor world, TreeAttribute tree)
         {
             Entity entityAnimal = world.GetEntityById(tree.GetLong("entityIdMount"));
@@ -133,7 +147,7 @@ namespace Vintagestory.GameContent
 
         public override void DidUnmount(EntityAgent entityAgent)
         {
-            if (entityAgent.World.Side == EnumAppSide.Server)
+            if (entityAgent.World.Side == EnumAppSide.Server && DoTeleportOnUnmount)
             {
                 tryTeleportToFreeLocation();
             }
@@ -142,7 +156,7 @@ namespace Vintagestory.GameContent
                 eplr.BodyYawLimits = null;
                 eplr.HeadYawLimits = null;
             }
-            
+
             base.DidUnmount(entityAgent);
 
             var ebh = mountedEntity as IMountableListener;

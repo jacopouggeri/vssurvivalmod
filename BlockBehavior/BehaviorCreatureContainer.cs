@@ -2,13 +2,16 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection.Emit;
 using System.Text;
+using Vintagestory.Common;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
 using Vintagestory.API.Config;
 using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
+using System.Diagnostics;
 
 namespace Vintagestory.GameContent
 {
@@ -75,6 +78,7 @@ namespace Vintagestory.GameContent
                             var wiggleZ = (float)api.World.Rand.NextDouble() * 4 - 2;
                             if (target != EnumItemRenderTarget.Gui) { wiggleX /= 25; wiggleZ /= 25; }
                             if (target == EnumItemRenderTarget.Ground) { wiggleX /= 4; wiggleZ /= 4; }
+                            renderinfo.Transform.EnsureDefaultValues();
                             renderinfo.Transform.Translation.X += wiggleX;
                             renderinfo.Transform.Translation.Z += wiggleZ;
                         }
@@ -144,7 +148,7 @@ namespace Vintagestory.GameContent
         {
             IServerPlayer plr = (byEntity as EntityPlayer).Player as IServerPlayer;
             ICoreServerAPI sapi = api as ICoreServerAPI;
-            
+
             if (HasAnimal(slot.Itemstack))
             {
                 if (blockSel == null)
@@ -166,22 +170,60 @@ namespace Vintagestory.GameContent
 
             if (entitySel != null)
             {
-                if (!(slot is ItemSlotBackpack))
+                if (!IsCatchable(entitySel.Entity))
                 {
-                    sapi?.SendIngameError(plr, "canthold", Lang.Get("Must have the container in backpack slot to catch an animal"));
+                    if (entitySel.Entity is not EntityBoat)
+                    {
+                        (byEntity.Api as ICoreClientAPI)?.TriggerIngameError(this, "notcatchable", Lang.Get("This animal is too large, or too wild to catch with a basket"));
+                    }
+                    
                     return;
                 }
 
-                if (api.Side == EnumAppSide.Server && !IsCatchable(entitySel.Entity))
-                {
-                    sapi?.SendIngameError(plr, "notcatchable", Lang.Get("This animal is too large, or too wild to catch with a basket"));
-                    return;
-                }
-                
-                CatchCreature(slot, entitySel.Entity);
                 handHandling = EnumHandHandling.PreventDefault;
                 handling = EnumHandling.PreventDefault;
+
+                ItemSlot emptyBackpackSlot = null;
+
+                if (slot is ItemSlotBackpack)
+                {
+                    emptyBackpackSlot = slot;
+                }
+                else
+                {
+                    IInventory backpackInventory = (byEntity as EntityPlayer)?.Player?.InventoryManager.GetOwnInventory(GlobalConstants.backpackInvClassName);
+                    if (backpackInventory != null)
+                    {
+                        emptyBackpackSlot = backpackInventory.Where(slot => slot is ItemSlotBackpack).FirstOrDefault(slot => slot.Empty);
+                    }
+                }
+
+                if (emptyBackpackSlot == null)
+                {
+                    sapi?.SendIngameError(plr, "canthold", Lang.Get("Must have empty backpack slot to catch an animal"));
+                    return;
+                }
+
+                ItemStack leftOverBaskets = null;
+                if (slot.StackSize > 1)
+                {
+                    leftOverBaskets = slot.TakeOut(slot.StackSize - 1);
+                }
+
+                CatchCreature(slot, entitySel.Entity);
+                slot.TryFlipWith(emptyBackpackSlot);
+
+                if (slot.Empty) slot.Itemstack = leftOverBaskets;
+                else if (!byEntity.TryGiveItemStack(leftOverBaskets))
+                {
+                    byEntity.World.SpawnItemEntity(leftOverBaskets, byEntity.ServerPos.XYZ);
+                }
+
                 slot.MarkDirty();
+                emptyBackpackSlot.MarkDirty();
+
+                
+
                 return;
             }
         }

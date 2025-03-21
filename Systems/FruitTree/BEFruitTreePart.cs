@@ -116,7 +116,8 @@ namespace Vintagestory.GameContent
                 }
 
                 // Prio 1: Config
-                blockFoliage.foliageProps.TryGetValue(TreeType, out var props);
+                DynFoliageProperties props = null;
+                blockFoliage.foliageProps?.TryGetValue(TreeType, out props);
                 if (props != null)
                 {
                     string key = textureCode + "-" + FoliageUtil.FoliageStates[(int)FoliageState];
@@ -315,6 +316,7 @@ namespace Vintagestory.GameContent
 
             getRootBhSetupListener();
             UnregisterGameTickListener(listenerId);
+            listenerId = 0;
         }
 
         FruitTreeRootBH rootBh;

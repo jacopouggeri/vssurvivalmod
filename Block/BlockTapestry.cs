@@ -94,7 +94,7 @@ namespace Vintagestory.GameContent
 
         public TVec2i(int x, int y, string intcomp) : base(x,y)
         {
-            this.IntComp = intcomp;
+            IntComp = intcomp;
         }
     }
 
@@ -103,11 +103,9 @@ namespace Vintagestory.GameContent
         ICoreClientAPI capi;
         BlockFacing orientation;
         bool noLoreEvent;
+        string loreCode;
 
-        static Vec2i left = new Vec2i(-1, 0);
-        static Vec2i right = new Vec2i(1, 0);
-        static Vec2i up = new Vec2i(0, 1);
-        static Vec2i down = new Vec2i(0, -1);
+        public static string[][] tapestryGroups;
 
         static Dictionary<string, TVec2i[]> neighbours2x1 = new Dictionary<string, TVec2i[]>()
         {
@@ -159,10 +157,17 @@ namespace Vintagestory.GameContent
             capi = api as ICoreClientAPI;
             orientation = BlockFacing.FromCode(Variant["side"]);
 
-            noLoreEvent = Attributes?.IsTrue("noLoreEvent") == true;
+            loreCode = Attributes["loreCode"].AsString("tapestry");
+            noLoreEvent = Attributes.IsTrue("noLoreEvent") == true;
+            if(tapestryGroups == null)
+                tapestryGroups = Attributes["tapestryGroups"].AsObject<string[][]>();
         }
 
-
+        public override void OnUnloaded(ICoreAPI api)
+        {
+            base.OnUnloaded(api);
+            tapestryGroups = null;
+        }
 
         public override void OnBeforeRender(ICoreClientAPI capi, ItemStack itemstack, EnumItemRenderTarget target, ref ItemRenderInfo renderinfo)
         {
@@ -188,6 +193,7 @@ namespace Vintagestory.GameContent
 
         public static string GetBaseCode(string type)
         {
+            if (type.Length == 0) return null;
             int substr = 0;
             if (char.IsDigit(type[type.Length - 1])) substr++;
             if (char.IsDigit(type[type.Length - 2])) substr++;
@@ -206,6 +212,8 @@ namespace Vintagestory.GameContent
                 if (beTas.Rotten || beTas.Type == null) return;
 
                 string baseCode = GetBaseCode(beTas.Type);
+                if (baseCode == null) return;
+
                 var id = GetLoreChapterId(baseCode);
                 if (id < 0) return;
 
@@ -240,13 +248,8 @@ namespace Vintagestory.GameContent
                 TVec2i[] vecs = neighbours[intComp];
 
                 if (isComplete(blockSel.Position, baseCode, vecs)) {
-
                     ModJournal jour = api.ModLoader.GetModSystem<ModJournal>();
-
-                    if (baseCode == "schematic-c-bloody") baseCode = "schematic-c";
-
                     var discovery = new LoreDiscovery() { Code = LoreCode, ChapterIds = new List<int>() { id } };
-
                     jour.TryDiscoverLore(discovery, byPlayer as IServerPlayer);
                 }
             }
@@ -256,10 +259,9 @@ namespace Vintagestory.GameContent
         {
             get
             {
-                return "tapestry";
+                return loreCode;
             }
         }
-
 
         public int GetLoreChapterId(string baseCode)
         {
@@ -337,10 +339,6 @@ namespace Vintagestory.GameContent
 
             return stack;
         }
-        public override string GetPlacedBlockInfo(IWorldAccessor world, BlockPos pos, IPlayer forPlayer)
-        {
-            return base.GetPlacedBlockInfo(world, pos, forPlayer);
-        }
 
         public override string GetHeldItemName(ItemStack itemStack)
         {
@@ -375,11 +373,15 @@ namespace Vintagestory.GameContent
         {
             string type = slot.Itemstack.Attributes.GetString("type", "");
             string baseCode = GetBaseCode(type);
+            if (baseCode == null) return "unknown";
+
             string size = Attributes["sizes"][baseCode].AsString();
             string intComp = type.Substring(baseCode.Length);
 
             switch (size)
             {
+                case "1x1":
+                    return "";
                 case "2x1":
                     switch (intComp)
                     {
@@ -432,7 +434,5 @@ namespace Vintagestory.GameContent
                     throw new Exception("invalid tapestry json config - missing size attribute for size '" + size + "'");
             }
         }
-
-
     }
 }
